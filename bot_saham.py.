@@ -1,0 +1,61 @@
+import yfinance as yf
+import pandas as pd
+import pandas_ta as ta
+import os
+from telegram import Bot
+import asyncio
+
+# Mengambil data dari Secrets yang kamu buat tadi
+TOKEN = os.getenv('TELEGRAM_TOKEN')
+CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+
+# Daftar saham sampel (LQ45/Likuid)
+TICKERS = [
+    "ASII.JK", "BBCA.JK", "BBRI.JK", "BMRI.JK", "TLKM.JK", 
+    "GOTO.JK", "ANTM.JK", "ADRO.JK", "UNTR.JK", "PGAS.JK",
+    "CPIN.JK", "HRUM.JK", "MDKA.JK", "INCO.JK", "KLBF.JK"
+]
+
+async def screener():
+    bot = Bot(token=TOKEN)
+    hasil_sinyal = []
+
+    for t in TICKERS:
+        try:
+            # Ambil data 1 tahun untuk akurasi MA200 & ATR
+            df = yf.download(t, period="1y", interval="1d", progress=False)
+            if len(df) < 200: continue
+
+            # Filter Likuiditas: Rata-rata transaksi harian > 10 Miliar
+            avg_value = (df['Close'] * df['Volume']).tail(20).mean()
+            if avg_value < 10_000_000_000: continue
+
+            # Indikator: RSI dan ATR (untuk Target Harga Dinamis)
+            df['RSI'] = ta.rsi(df['Close'], length=14)
+            df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
+            
+            last = df.iloc[-1]
+            prev = df.iloc[-2]
+            
+            # Logika BSJP: Harga naik + Volume di atas rata-rata 5 hari
+            if last['Close'] > prev['Close'] and last['Volume'] > df['Volume'].tail(5).mean():
+                # Target Profit (TP) & Stop Loss (SL) Dinamis menggunakan 1.5x ATR
+                tp = last['Close'] + (last['ATR'] * 1.5)
+                sl = last['Close'] - (last['ATR'] * 1.5)
+                
+                info = (f"🎯 **{t}**\n"
+                        f"Entry: {last['Close']:.0f}\n"
+                        f"TP: {tp:.0f} | SL: {sl:.0f}\n"
+                        f"RSI: {last['RSI']:.1f}")
+                hasil_sinyal.append(info)
+        except:
+            continue
+
+    # Kirim Pesan ke Telegram
+    pesan = "🚀 **DAFTAR BELANJA SORE (BSJP)**\n\n"
+    pesan += "\n\n".join(hasil_sinyal[:10]) if hasil_sinyal else "Belum ada sinyal kuat sore ini."
+    
+    await bot.send_message(chat_id=CHAT_ID, text=pesan, parse_mode='Markdown')
+
+if __name__ == "__main__":
+    asyncio.run(screener())

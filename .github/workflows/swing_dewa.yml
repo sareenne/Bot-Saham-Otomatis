@@ -2,7 +2,7 @@ name: Bot Swing Level Dewa
 
 on:
   schedule:
-    - cron: '20 16 * * 1-5'   # 16:20 WIB (setelah market close)
+    - cron: '40 8 * * 1-5'   # 15:40 WIB (menjelang market close)
   workflow_dispatch:
 
 jobs:

@@ -1,12 +1,12 @@
 import yfinance as yf
 import pandas_ta as ta
 import os
-from telegram import Bot
-from telegram.constants import ParseMode
-import asyncio
+import math
+from telegram import Bot, ParseMode
 
-TOKEN = os.getenv('TELEGRAM_TOKEN')
-CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+# ================= CONFIG =================
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TICKERS = [
     "ASII.JK", "BBCA.JK", "BBRI.JK", "BMRI.JK", "TLKM.JK",
@@ -14,47 +14,111 @@ TICKERS = [
     "CPIN.JK", "HRUM.JK", "MDKA.JK", "INCO.JK", "KLBF.JK"
 ]
 
-async def screener():
+# ================= LEVEL =================
+def hitung_level(df):
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    entry = last["Close"]
+    tp = min(entry * 1.015, prev["High"])
+    sl = max(entry * 0.99, last["Low"])
+
+    rr = (tp - entry) / (entry - sl) if entry != sl else 0
+    return entry, tp, sl, rr
+
+def hitung_skor(df, entry, tp, sl):
+    last = df.iloc[-1]
+
+    avg_value = (df["Close"] * df["Volume"]).tail(20).mean()
+    liquidity = math.log10(avg_value)
+
+    vol_score = last["Volume"] / df["Volume"].rolling(20).mean().iloc[-1]
+    trend_score = (last["Close"] - last["ema20"]) / last["ema20"]
+    rr_score = (tp - entry) / (entry - sl)
+
+    return round(
+        (0.35 * liquidity) +
+        (0.25 * vol_score) +
+        (0.20 * trend_score) +
+        (0.20 * rr_score), 2
+    )
+
+# ================= MAIN =================
+def main():
     bot = Bot(token=TOKEN)
     hasil = []
 
     for t in TICKERS:
         try:
             df = yf.download(t, period="1y", interval="1d", progress=False)
-            if df.empty or len(df) < 200:
+            if df.empty or len(df) < 60:
                 continue
 
-            # Likuiditas minimal 10 miliar
+            # Likuiditas min 10M
             avg_value = (df["Close"] * df["Volume"]).tail(20).mean()
             if avg_value < 10_000_000_000:
                 continue
 
             # Indikator
-            df["RSI"] = ta.rsi(df["Close"], length=14)
-            df["ATR"] = ta.atr(df["High"], df["Low"], df["Close"], length=14)
+            df["ema20"] = ta.ema(df["Close"], 20)
+            df["ema50"] = ta.ema(df["Close"], 50)
+            df["vwap"] = ta.vwap(df["High"], df["Low"], df["Close"], df["Volume"])
+            df["rsi"] = ta.rsi(df["Close"], 14)
+
+            df["vol_ma20"] = df["Volume"].rolling(20).mean()
+            df["vol_spike"] = df["Volume"] > df["vol_ma20"] * 1.5
 
             last = df.iloc[-1]
-            prev = df.iloc[-2]
 
-            # Sinyal BSJP
-            if last["Close"] > prev["Close"] and last["Volume"] > df["Volume"].tail(5).mean():
-                tp = last["Close"] + (last["ATR"] * 1.5)
-                sl = last["Close"] - (last["ATR"] * 1.5)
+            # Filter BSJP
+            if not (
+                last["Close"] > last["Open"] and
+                last["Close"] > last["ema20"] and
+                last["ema20"] >= last["ema50"] and
+                last["Close"] > last["vwap"] and
+                last["vol_spike"] and
+                55 <= last["rsi"] <= 70
+            ):
+                continue
 
-                hasil.append(
-                    f"🎯 *{t}*\n"
-                    f"Entry: {last['Close']:.0f}\n"
-                    f"TP: {tp:.0f} | SL: {sl:.0f}\n"
-                    f"RSI: {last['RSI']:.1f}"
-                )
+            entry, tp, sl, rr = hitung_level(df)
+            if rr < 1.3:
+                continue
+
+            skor = hitung_skor(df, entry, tp, sl)
+
+            hasil.append({
+                "ticker": t,
+                "entry": entry,
+                "tp": tp,
+                "sl": sl,
+                "rr": rr,
+                "score": skor
+            })
 
         except Exception:
             continue
 
-    pesan = "🚀 *DAFTAR BELANJA SORE (BSJP)*\n\n"
-    pesan += "\n\n".join(hasil[:10]) if hasil else "Belum ada sinyal kuat sore ini."
+    hasil.sort(key=lambda x: x["score"], reverse=True)
 
-    await bot.send_message(chat_id=CHAT_ID, text=pesan, parse_mode=ParseMode.MARKDOWN)
+    if hasil:
+        pesan = "🏆 *RANKING BSJP TERKUAT (SORE)*\n\n"
+        for i, h in enumerate(hasil[:5], 1):
+            pesan += (
+                f"#{i} *{h['ticker']}*\n"
+                f"Entry : `{h['entry']:.0f}`\n"
+                f"Sell  : `{h['tp']:.0f}`\n"
+                f"SL    : `{h['sl']:.0f}`\n"
+                f"RR    : `{h['rr']:.2f}` | Score : `{h['score']}`\n\n"
+            )
+    else:
+        pesan = "📭 *BSJP*\nTidak ada setup aman hari ini."
+
+    bot.send_message(
+        chat_id=CHAT_ID,
+        text=pesan,
+        parse_mode=ParseMode.MARKDOWN
+    )
 
 if __name__ == "__main__":
-    asyncio.run(screener())
+    main()

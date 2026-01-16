@@ -49,9 +49,9 @@ def analyze(kode):
     avg_value = float((df["Close"] * df["Volume"]).tail(20).mean())
     hasil = {}
 
-    # ===== BAGGER =====
+    # ===== BAGGER (AMAN, BUKAN AGRESIF) =====
     p = 0
-    if avg_value >= 25e9: p += 1
+    if avg_value >= 25_000_000_000: p += 1
     if ema20 > ema50 and ema50 > ema100: p += 1
     if abs(close - ema50) / ema50 <= 0.05: p += 1
 
@@ -68,12 +68,12 @@ def analyze(kode):
             "tp": tps(close, [1.10, 1.20, 1.30]),
             "sl": close * 0.93,
             "grade": g, "star": s,
-            "note": "Akumulasi kuat, trend menengah baru mulai"
+            "note": "Akumulasi rapi, potensi menengah"
         }
 
-    # ===== SWING =====
+    # ===== SWING (2–5 HARI, DEFENSIVE) =====
     p = 0
-    if avg_value >= 20e9: p += 1
+    if avg_value >= 20_000_000_000: p += 1
     if ema20 > ema50: p += 1
     if abs(close - ema20) / ema20 <= 0.03: p += 1
     if volume > vol_ma20 * 1.5: p += 1
@@ -88,12 +88,12 @@ def analyze(kode):
             "tp": tps(close, [1.04, 1.06, 1.08]),
             "sl": close * 0.97,
             "grade": g, "star": s,
-            "note": "Momentum awal, cocok 2–5 hari"
+            "note": "Momentum pendek, cocok 2–5 hari"
         }
 
-    # ===== SCALPING =====
+    # ===== SCALPING (OPSIONAL) =====
     p = 0
-    if avg_value >= 50e9: p += 1
+    if avg_value >= 50_000_000_000: p += 1
     if volume > vol_ma20: p += 1
     if close > ema20: p += 1
 
@@ -104,11 +104,11 @@ def analyze(kode):
             "tp": tps(close, [1.008, 1.012, 1.016]),
             "sl": close * 0.995,
             "grade": g, "star": s,
-            "note": "Likuid tinggi, cocok intraday"
+            "note": "Intraday cepat, hati-hati"
         }
 
     if not hasil:
-        return None, "Tidak ada setup layak saat ini"
+        return None, "Tidak ada setup aman saat ini"
 
     return hasil, None
 
@@ -127,11 +127,15 @@ def handle(update, context):
     prioritas = ["BAGGER", "SWING", "SCALPING"]
     utama = default if default in hasil else next(m for m in prioritas if m in hasil)
 
-    msg = f"📊 *{kode}*\n\nMODE VALID:\n"
-    for m in hasil:
-        msg += f"{'🔥' if m=='BAGGER' else '🟡' if m=='SWING' else '🔵'} {m}\n"
+    # ===== SINYAL AKSI (PENTING) =====
+    if hasil[utama]["grade"] in ["A", "B"]:
+        sinyal = "🟢 BUY"
+    else:
+        sinyal = "⚠️ WAIT / EXIT"
 
-    msg += f"\n⭐ Rekomendasi: *{utama}* {hasil[utama]['star']} ({hasil[utama]['grade']})\n\n"
+    msg = f"📊 *{kode}*\n\n"
+    msg += f"📢 *SINYAL*: {sinyal}\n"
+    msg += f"⭐ Mode: *{utama}* ({hasil[utama]['grade']})\n\n"
 
     for m, d in hasil.items():
         icon = "🔥" if m=="BAGGER" else "🟡" if m=="SWING" else "🔵"
@@ -144,7 +148,7 @@ def handle(update, context):
             f"SL    : {d['sl']:.0f}\n\n"
         )
 
-    msg += f"📌 _{hasil[utama]['note']}_"
+    msg += f"📝 _{hasil[utama]['note']}_"
     update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
 def main():

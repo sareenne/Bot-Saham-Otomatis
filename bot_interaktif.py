@@ -38,7 +38,7 @@ def analyze(kode):
 
     last = df.iloc[-1]
 
-    # === pastikan SEMUA scalar ===
+    # === SEMUA DIJADIKAN FLOAT (AMAN) ===
     close = float(last["Close"])
     ema20 = float(last["ema20"])
     ema50 = float(last["ema50"])
@@ -46,11 +46,9 @@ def analyze(kode):
     volume = float(last["Volume"])
     vol_ma20 = float(last["vol_ma20"])
 
-    prev3 = df.iloc[-4:-1]
-    prev5 = df.iloc[-6:-1]
-    prev10 = df.iloc[-11:-1]
-
+    # nilai transaksi rata-rata (scalar)
     avg_value = float((df["Close"] * df["Volume"]).tail(20).mean())
+
     hasil = {}
 
     # ===== BAGGER =====
@@ -61,9 +59,15 @@ def analyze(kode):
         p += 1
     if abs(close - ema50) / ema50 <= 0.05:
         p += 1
-    if all(prev5["Volume"].iloc[i] < prev5["Volume"].iloc[i+1] for i in range(len(prev5)-1)):
+
+    # cek volume naik TANPA all() / loop Series
+    vol5 = df["Volume"].tail(5).values
+    if vol5[4] > vol5[3] > vol5[2] > vol5[1] > vol5[0]:
         p += 1
-    if (prev10["Close"].iloc[-1] - prev10["Close"].iloc[0]) / prev10["Close"].iloc[0] <= 0.15:
+
+    # harga 10 hari masih konsolidasi
+    close10 = df["Close"].tail(10).values
+    if (close10[-1] - close10[0]) / close10[0] <= 0.15:
         p += 1
 
     if p >= 3:
@@ -77,7 +81,7 @@ def analyze(kode):
             "note": "Akumulasi kuat, trend menengah baru mulai"
         }
 
-    # ===== SWING =====
+    # ===== SWING (2–5 HARI) =====
     p = 0
     if avg_value >= 20_000_000_000:
         p += 1
@@ -87,7 +91,9 @@ def analyze(kode):
         p += 1
     if volume > vol_ma20 * 1.5:
         p += 1
-    if (prev3["Close"].iloc[-1] - prev3["Close"].iloc[0]) / prev3["Close"].iloc[0] <= 0.07:
+
+    close3 = df["Close"].tail(3).values
+    if (close3[-1] - close3[0]) / close3[0] <= 0.07:
         p += 1
 
     if p >= 3:

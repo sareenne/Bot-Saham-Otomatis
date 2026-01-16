@@ -1,10 +1,9 @@
 import yfinance as yf
-import pandas_ta as ta
+import pandas as pd
 import os
 import math
 from telegram import Bot, ParseMode
 
-# ================= CONFIG =================
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -14,7 +13,26 @@ TICKERS = [
     "CPIN.JK", "HRUM.JK", "MDKA.JK", "INCO.JK", "KLBF.JK"
 ]
 
+# ================= INDIKATOR MANUAL =================
+
+def ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
+
+def rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+def vwap(df):
+    tp = (df["High"] + df["Low"] + df["Close"]) / 3
+    return (tp * df["Volume"]).cumsum() / df["Volume"].cumsum()
+
 # ================= LEVEL =================
+
 def hitung_level(df):
     last = df.iloc[-1]
     prev = df.iloc[-2]
@@ -22,8 +40,8 @@ def hitung_level(df):
     entry = last["Close"]
     tp = min(entry * 1.015, prev["High"])
     sl = max(entry * 0.99, last["Low"])
-
     rr = (tp - entry) / (entry - sl) if entry != sl else 0
+
     return entry, tp, sl, rr
 
 def hitung_skor(df, entry, tp, sl):
@@ -37,13 +55,14 @@ def hitung_skor(df, entry, tp, sl):
     rr_score = (tp - entry) / (entry - sl)
 
     return round(
-        (0.35 * liquidity) +
-        (0.25 * vol_score) +
-        (0.20 * trend_score) +
-        (0.20 * rr_score), 2
+        0.35 * liquidity +
+        0.25 * vol_score +
+        0.20 * trend_score +
+        0.20 * rr_score, 2
     )
 
 # ================= MAIN =================
+
 def main():
     bot = Bot(token=TOKEN)
     hasil = []
@@ -54,23 +73,20 @@ def main():
             if df.empty or len(df) < 60:
                 continue
 
-            # Likuiditas min 10M
             avg_value = (df["Close"] * df["Volume"]).tail(20).mean()
             if avg_value < 10_000_000_000:
                 continue
 
-            # Indikator
-            df["ema20"] = ta.ema(df["Close"], 20)
-            df["ema50"] = ta.ema(df["Close"], 50)
-            df["vwap"] = ta.vwap(df["High"], df["Low"], df["Close"], df["Volume"])
-            df["rsi"] = ta.rsi(df["Close"], 14)
+            df["ema20"] = ema(df["Close"], 20)
+            df["ema50"] = ema(df["Close"], 50)
+            df["rsi"] = rsi(df["Close"])
+            df["vwap"] = vwap(df)
 
             df["vol_ma20"] = df["Volume"].rolling(20).mean()
             df["vol_spike"] = df["Volume"] > df["vol_ma20"] * 1.5
 
             last = df.iloc[-1]
 
-            # Filter BSJP
             if not (
                 last["Close"] > last["Open"] and
                 last["Close"] > last["ema20"] and
@@ -114,11 +130,7 @@ def main():
     else:
         pesan = "📭 *BSJP*\nTidak ada setup aman hari ini."
 
-    bot.send_message(
-        chat_id=CHAT_ID,
-        text=pesan,
-        parse_mode=ParseMode.MARKDOWN
-    )
+    bot.send_message(chat_id=CHAT_ID, text=pesan, parse_mode=ParseMode.MARKDOWN)
 
 if __name__ == "__main__":
     main()

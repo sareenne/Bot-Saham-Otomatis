@@ -1,4 +1,4 @@
-name: Bot Interaktif (15 Menit)
+name: Bot Interaktif (10 Menit)
 
 on:
   workflow_dispatch:
@@ -19,8 +19,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install python-telegram-bot==13.15 yfinance pandas==2.0.3 numpy==1.24.4
 
-      - name: Run bot (15 menit)
+      - name: Run bot (10 menit)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         run: |
-          timeout 900 python bot_interaktif.py || true
+          timeout 600 python bot_interaktif.py || true

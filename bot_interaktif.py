@@ -1,6 +1,5 @@
 import yfinance as yf
 import os
-from datetime import datetime
 from telegram.ext import Updater, MessageHandler, Filters
 from telegram import ParseMode
 
@@ -12,16 +11,10 @@ def ema(series, p):
 
 def confidence(p):
     if p >= 5:
-        return "A", "⭐⭐⭐⭐⭐"
+        return "A"
     if p >= 3:
-        return "B", "⭐⭐⭐⭐☆"
-    return "C", "⭐⭐⭐☆☆"
-
-def default_mode():
-    jam = datetime.now().hour + datetime.now().minute / 60
-    if 9 <= jam < 11.5 or 13.5 <= jam < 15:
-        return "SCALPING"
-    return "SWING"
+        return "B"
+    return "C"
 
 def tps(entry, levels):
     return [entry * lvl for lvl in levels]
@@ -49,7 +42,7 @@ def analyze(kode):
     avg_value = float((df["Close"] * df["Volume"]).tail(20).mean())
     hasil = {}
 
-    # ===== BAGGER (AMAN, BUKAN AGRESIF) =====
+    # ===== BAGGER =====
     p = 0
     if avg_value >= 25_000_000_000: p += 1
     if ema20 > ema50 and ema50 > ema100: p += 1
@@ -62,16 +55,15 @@ def analyze(kode):
     if (close10[-1] - close10[0]) / close10[0] <= 0.15: p += 1
 
     if p >= 3:
-        g,s = confidence(p)
         hasil["BAGGER"] = {
             "entry": close,
             "tp": tps(close, [1.10, 1.20, 1.30]),
             "sl": close * 0.93,
-            "grade": g, "star": s,
+            "grade": confidence(p),
             "note": "Akumulasi rapi, potensi menengah"
         }
 
-    # ===== SWING (2–5 HARI, DEFENSIVE) =====
+    # ===== SWING =====
     p = 0
     if avg_value >= 20_000_000_000: p += 1
     if ema20 > ema50: p += 1
@@ -82,29 +74,27 @@ def analyze(kode):
     if (close3[-1] - close3[0]) / close3[0] <= 0.07: p += 1
 
     if p >= 3:
-        g,s = confidence(p)
         hasil["SWING"] = {
             "entry": close,
             "tp": tps(close, [1.04, 1.06, 1.08]),
             "sl": close * 0.97,
-            "grade": g, "star": s,
+            "grade": confidence(p),
             "note": "Momentum pendek, cocok 2–5 hari"
         }
 
-    # ===== SCALPING (OPSIONAL) =====
+    # ===== SCALPING =====
     p = 0
     if avg_value >= 50_000_000_000: p += 1
     if volume > vol_ma20: p += 1
     if close > ema20: p += 1
 
     if p >= 2:
-        g,s = confidence(p)
         hasil["SCALPING"] = {
             "entry": close,
             "tp": tps(close, [1.008, 1.012, 1.016]),
             "sl": close * 0.995,
-            "grade": g, "star": s,
-            "note": "Intraday cepat, hati-hati"
+            "grade": confidence(p),
+            "note": "Intraday cepat, perlu disiplin"
         }
 
     if not hasil:
@@ -116,6 +106,7 @@ def analyze(kode):
 def handle(update, context):
     parts = update.message.text.strip().upper().split()
     kode = parts[0]
+
     harga_beli = float(parts[1]) if len(parts) == 2 else None
 
     hasil, error = analyze(kode)
@@ -123,24 +114,40 @@ def handle(update, context):
         update.message.reply_text(f"❌ *{kode}*\n{error}", parse_mode=ParseMode.MARKDOWN)
         return
 
-    default = default_mode()
+    # MODE UTAMA (prioritas aman)
     prioritas = ["BAGGER", "SWING", "SCALPING"]
-    utama = default if default in hasil else next(m for m in prioritas if m in hasil)
+    utama = next(m for m in prioritas if m in hasil)
+    d_utama = hasil[utama]
 
-    # ===== SINYAL AKSI (PENTING) =====
-    if hasil[utama]["grade"] in ["A", "B"]:
-        sinyal = "🟢 BUY"
+    # LOGIKA REKOM
+    if harga_beli is None:
+        rekom = "🟢 BUY" if d_utama["grade"] in ["A", "B"] else "⚠️ WAIT"
+        posisi = "Belum punya saham"
     else:
-        sinyal = "⚠️ WAIT / EXIT"
+        posisi = f"Punya di {harga_beli:.0f}"
+        if harga_beli < d_utama["sl"]:
+            rekom = "🔴 EXIT (CUT LOSS)"
+        elif harga_beli <= d_utama["entry"] * 1.03:
+            rekom = "🟢 HOLD"
+        else:
+            rekom = "🟡 HOLD / PARTIAL TP"
 
-    msg = f"📊 *{kode}*\n\n"
-    msg += f"📢 *SINYAL*: {sinyal}\n"
-    msg += f"⭐ Mode: *{utama}* ({hasil[utama]['grade']})\n\n"
+    # OUTPUT
+    msg = (
+        f"📊 *{kode}*\n"
+        f"📌 {posisi}\n"
+        f"📢 *REKOM*: {rekom}\n\n"
+        f"MODE TERDETEKSI:\n"
+    )
+
+    for m in hasil:
+        msg += f"- {m} ({hasil[m]['grade']})\n"
+
+    msg += f"\nMODE UTAMA: *{utama}*\n\n"
 
     for m, d in hasil.items():
-        icon = "🔥" if m=="BAGGER" else "🟡" if m=="SWING" else "🔵"
         msg += (
-            f"{icon} *{m}*\n"
+            f"▶️ *{m}*\n"
             f"Entry : {d['entry']:.0f}\n"
             f"TP 1  : {d['tp'][0]:.0f}\n"
             f"TP 2  : {d['tp'][1]:.0f}\n"
@@ -148,7 +155,7 @@ def handle(update, context):
             f"SL    : {d['sl']:.0f}\n\n"
         )
 
-    msg += f"📝 _{hasil[utama]['note']}_"
+    msg += f"📝 _{d_utama['note']}_"
     update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
 def main():

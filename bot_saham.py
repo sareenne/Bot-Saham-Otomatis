@@ -1,0 +1,144 @@
+import yfinance as yf
+import pandas as pd
+import os
+import math
+from telegram import Bot, ParseMode
+
+# ================== CONFIG ==================
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+TICKERS = [
+    "ASII.JK", "BBCA.JK", "BBRI.JK", "BMRI.JK", "TLKM.JK",
+    "GOTO.JK", "ANTM.JK", "ADRO.JK", "UNTR.JK", "PGAS.JK",
+    "CPIN.JK", "HRUM.JK", "MDKA.JK", "INCO.JK", "KLBF.JK"
+]
+
+# ================== INDIKATOR MANUAL ==================
+def ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
+
+def rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+def vwap(df):
+    tp = (df["High"] + df["Low"] + df["Close"]) / 3
+    return (tp * df["Volume"]).cumsum() / df["Volume"].cumsum()
+
+# ================== LEVEL ==================
+def hitung_level(df):
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    entry = last["Close"]
+    tp = min(entry * 1.015, prev["High"])
+    sl = max(entry * 0.99, last["Low"])
+
+    rr = (tp - entry) / (entry - sl) if entry != sl else 0
+    return entry, tp, sl, rr
+
+def hitung_skor(df, entry, tp, sl):
+    last = df.iloc[-1]
+
+    avg_value = (df["Close"] * df["Volume"]).tail(20).mean()
+    liquidity = math.log10(avg_value)
+
+    vol_score = last["Volume"] / df["Volume"].rolling(20).mean().iloc[-1]
+    trend_score = (last["Close"] - last["ema20"]) / last["ema20"]
+    rr_score = (tp - entry) / (entry - sl)
+
+    return round(
+        0.35 * liquidity +
+        0.25 * vol_score +
+        0.20 * trend_score +
+        0.20 * rr_score, 2
+    )
+
+# ================== MAIN ==================
+def main():
+    if not TOKEN or not CHAT_ID:
+        raise ValueError("TELEGRAM_TOKEN atau TELEGRAM_CHAT_ID belum diset")
+
+    bot = Bot(token=TOKEN)
+    hasil = []
+
+    for t in TICKERS:
+        try:
+            df = yf.download(t, period="1y", interval="1d", progress=False)
+            if df.empty or len(df) < 60:
+                continue
+
+            # Likuiditas minimal 10M
+            avg_value = (df["Close"] * df["Volume"]).tail(20).mean()
+            if avg_value < 10_000_000_000:
+                continue
+
+            # Hitung indikator
+            df["ema20"] = ema(df["Close"], 20)
+            df["ema50"] = ema(df["Close"], 50)
+            df["rsi"] = rsi(df["Close"])
+            df["vwap"] = vwap(df)
+
+            df["vol_ma20"] = df["Volume"].rolling(20).mean()
+            df["vol_spike"] = df["Volume"] > df["vol_ma20"] * 1.5
+
+            last = df.iloc[-1]
+
+            # Filter BSJP
+            if not (
+                last["Close"] > last["Open"] and
+                last["Close"] > last["ema20"] and
+                last["ema20"] >= last["ema50"] and
+                last["Close"] > last["vwap"] and
+                last["vol_spike"] and
+                55 <= last["rsi"] <= 70
+            ):
+                continue
+
+            entry, tp, sl, rr = hitung_level(df)
+            if rr < 1.3:
+                continue
+
+            skor = hitung_skor(df, entry, tp, sl)
+
+            hasil.append({
+                "ticker": t,
+                "entry": entry,
+                "tp": tp,
+                "sl": sl,
+                "rr": rr,
+                "score": skor
+            })
+
+        except Exception:
+            continue
+
+    hasil.sort(key=lambda x: x["score"], reverse=True)
+
+    if hasil:
+        pesan = "🏆 *RANKING BSJP TERKUAT (SORE)*\n\n"
+        for i, h in enumerate(hasil[:5], 1):
+            pesan += (
+                f"#{i} *{h['ticker']}*\n"
+                f"Entry : `{h['entry']:.0f}`\n"
+                f"Sell  : `{h['tp']:.0f}`\n"
+                f"SL    : `{h['sl']:.0f}`\n"
+                f"RR    : `{h['rr']:.2f}` | Score : `{h['score']}`\n\n"
+            )
+    else:
+        pesan = "📭 *BSJP*\nTidak ada setup aman hari ini."
+
+    bot.send_message(
+        chat_id=CHAT_ID,
+        text=pesan,
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+if __name__ == "__main__":
+    main()

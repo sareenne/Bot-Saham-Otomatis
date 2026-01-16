@@ -41,31 +41,33 @@ def analyze(kode):
     prev5 = df.iloc[-6:-1]
     prev10 = df.iloc[-11:-1]
 
-    avg_value = (df["Close"] * df["Volume"]).tail(20).mean()
+    # ✅ FIX: pastikan ini FLOAT, bukan Series
+    avg_value = float((df["Close"] * df["Volume"]).tail(20).mean())
+
     hasil = {}
 
     # ===== BAGGER =====
     p = 0
-    if avg_value >= 25e9: p += 1
+    if avg_value >= 25_000_000_000: p += 1
     if last["ema20"] > last["ema50"] > last["ema100"]: p += 1
     if abs(last["Close"] - last["ema50"]) / last["ema50"] <= 0.05: p += 1
-    if all(prev5["Volume"].values[i] < prev5["Volume"].values[i+1] for i in range(4)): p += 1
+    if all(prev5["Volume"].iloc[i] < prev5["Volume"].iloc[i+1] for i in range(len(prev5)-1)): p += 1
     if (prev10["Close"].iloc[-1] - prev10["Close"].iloc[0]) / prev10["Close"].iloc[0] <= 0.15: p += 1
 
     if p >= 3:
         g, s = confidence(p)
         hasil["BAGGER"] = {
-            "entry": last["Close"],
-            "tp": last["Close"] * 1.30,
-            "sl": last["Close"] * 0.93,
+            "entry": float(last["Close"]),
+            "tp": float(last["Close"] * 1.30),
+            "sl": float(last["Close"] * 0.93),
             "grade": g,
             "star": s,
             "note": "Akumulasi kuat, trend menengah baru mulai"
         }
 
-    # ===== SWING (2–5 hari) =====
+    # ===== SWING =====
     p = 0
-    if avg_value >= 20e9: p += 1
+    if avg_value >= 20_000_000_000: p += 1
     if last["ema20"] > last["ema50"]: p += 1
     if abs(last["Close"] - last["ema20"]) / last["ema20"] <= 0.03: p += 1
     if last["Volume"] > last["vol_ma20"] * 1.5: p += 1
@@ -74,9 +76,9 @@ def analyze(kode):
     if p >= 3:
         g, s = confidence(p)
         hasil["SWING"] = {
-            "entry": last["Close"],
-            "tp": last["Close"] * 1.06,
-            "sl": last["Close"] * 0.97,
+            "entry": float(last["Close"]),
+            "tp": float(last["Close"] * 1.06),
+            "sl": float(last["Close"] * 0.97),
             "grade": g,
             "star": s,
             "note": "Momentum awal, cocok 2–5 hari"
@@ -84,16 +86,16 @@ def analyze(kode):
 
     # ===== SCALPING =====
     p = 0
-    if avg_value >= 50e9: p += 1
+    if avg_value >= 50_000_000_000: p += 1
     if last["Volume"] > last["vol_ma20"]: p += 1
     if last["Close"] > last["ema20"]: p += 1
 
     if p >= 2:
         g, s = confidence(p)
         hasil["SCALPING"] = {
-            "entry": last["Close"],
-            "tp": last["Close"] * 1.01,
-            "sl": last["Close"] * 0.995,
+            "entry": float(last["Close"]),
+            "tp": float(last["Close"] * 1.01),
+            "sl": float(last["Close"] * 0.995),
             "grade": g,
             "star": s,
             "note": "Likuid tinggi, cocok intraday"
@@ -110,17 +112,7 @@ def handle(update, context):
     parts = text.split()
 
     kode = parts[0]
-    harga_beli = None
-
-    if len(parts) == 2:
-        try:
-            harga_beli = float(parts[1])
-        except:
-            update.message.reply_text(
-                "❌ Format salah\nContoh:\nBBRI 5200",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return
+    harga_beli = float(parts[1]) if len(parts) == 2 else None
 
     hasil, error = analyze(kode)
     if error:
@@ -139,36 +131,23 @@ def handle(update, context):
 
     msg += f"\n⭐ *Rekomendasi:* {utama} {hasil[utama]['star']} ({hasil[utama]['grade']})\n"
 
-    # ===== STATUS & TP/SL =====
     if harga_beli:
         tp = harga_beli * (hasil[utama]["tp"] / hasil[utama]["entry"])
         sl = harga_beli * (hasil[utama]["sl"] / hasil[utama]["entry"])
-
-        if harga_beli > hasil[utama]["entry"] * 1.05:
-            status = "⚠️ EXIT / TIGHT SL"
-        else:
-            status = "🟢 HOLD"
+        status = "🟢 HOLD" if harga_beli <= hasil[utama]["entry"] * 1.05 else "⚠️ EXIT / TIGHT SL"
 
         msg += (
-            f"\n💼 *Posisi kamu:* `{harga_beli:.0f}`\n"
+            f"\n💼 Posisi kamu: `{harga_beli:.0f}`\n"
             f"🎯 TP: `{tp:.0f}`\n"
             f"🛑 SL: `{sl:.0f}`\n"
             f"📌 Status: *{status}*"
         )
-
     else:
-        if hasil[utama]["grade"] in ["A", "B"]:
-            status = "🟢 BUY"
-        else:
-            status = "⚠️ WAIT"
-
+        status = "🟢 BUY" if hasil[utama]["grade"] in ["A", "B"] else "⚠️ WAIT"
         msg += f"\n📌 Status: *{status}*\n"
 
         for m, d in hasil.items():
-            msg += (
-                f"\n{m}\n"
-                f"Entry `{d['entry']:.0f}` | TP `{d['tp']:.0f}` | SL `{d['sl']:.0f}`"
-            )
+            msg += f"\n{m}\nEntry `{d['entry']:.0f}` | TP `{d['tp']:.0f}` | SL `{d['sl']:.0f}`"
 
     msg += f"\n\n_{hasil[utama]['note']}_"
     update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)

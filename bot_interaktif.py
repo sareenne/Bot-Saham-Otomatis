@@ -37,29 +37,41 @@ def analyze(kode):
     df["vol_ma20"] = df["Volume"].rolling(20).mean()
 
     last = df.iloc[-1]
+
+    # === pastikan SEMUA scalar ===
+    close = float(last["Close"])
+    ema20 = float(last["ema20"])
+    ema50 = float(last["ema50"])
+    ema100 = float(last["ema100"])
+    volume = float(last["Volume"])
+    vol_ma20 = float(last["vol_ma20"])
+
     prev3 = df.iloc[-4:-1]
     prev5 = df.iloc[-6:-1]
     prev10 = df.iloc[-11:-1]
 
-    # ✅ FIX: pastikan ini FLOAT, bukan Series
     avg_value = float((df["Close"] * df["Volume"]).tail(20).mean())
-
     hasil = {}
 
     # ===== BAGGER =====
     p = 0
-    if avg_value >= 25_000_000_000: p += 1
-    if last["ema20"] > last["ema50"] > last["ema100"]: p += 1
-    if abs(last["Close"] - last["ema50"]) / last["ema50"] <= 0.05: p += 1
-    if all(prev5["Volume"].iloc[i] < prev5["Volume"].iloc[i+1] for i in range(len(prev5)-1)): p += 1
-    if (prev10["Close"].iloc[-1] - prev10["Close"].iloc[0]) / prev10["Close"].iloc[0] <= 0.15: p += 1
+    if avg_value >= 25_000_000_000:
+        p += 1
+    if ema20 > ema50 and ema50 > ema100:
+        p += 1
+    if abs(close - ema50) / ema50 <= 0.05:
+        p += 1
+    if all(prev5["Volume"].iloc[i] < prev5["Volume"].iloc[i+1] for i in range(len(prev5)-1)):
+        p += 1
+    if (prev10["Close"].iloc[-1] - prev10["Close"].iloc[0]) / prev10["Close"].iloc[0] <= 0.15:
+        p += 1
 
     if p >= 3:
         g, s = confidence(p)
         hasil["BAGGER"] = {
-            "entry": float(last["Close"]),
-            "tp": float(last["Close"] * 1.30),
-            "sl": float(last["Close"] * 0.93),
+            "entry": close,
+            "tp": close * 1.30,
+            "sl": close * 0.93,
             "grade": g,
             "star": s,
             "note": "Akumulasi kuat, trend menengah baru mulai"
@@ -67,18 +79,23 @@ def analyze(kode):
 
     # ===== SWING =====
     p = 0
-    if avg_value >= 20_000_000_000: p += 1
-    if last["ema20"] > last["ema50"]: p += 1
-    if abs(last["Close"] - last["ema20"]) / last["ema20"] <= 0.03: p += 1
-    if last["Volume"] > last["vol_ma20"] * 1.5: p += 1
-    if (prev3["Close"].iloc[-1] - prev3["Close"].iloc[0]) / prev3["Close"].iloc[0] <= 0.07: p += 1
+    if avg_value >= 20_000_000_000:
+        p += 1
+    if ema20 > ema50:
+        p += 1
+    if abs(close - ema20) / ema20 <= 0.03:
+        p += 1
+    if volume > vol_ma20 * 1.5:
+        p += 1
+    if (prev3["Close"].iloc[-1] - prev3["Close"].iloc[0]) / prev3["Close"].iloc[0] <= 0.07:
+        p += 1
 
     if p >= 3:
         g, s = confidence(p)
         hasil["SWING"] = {
-            "entry": float(last["Close"]),
-            "tp": float(last["Close"] * 1.06),
-            "sl": float(last["Close"] * 0.97),
+            "entry": close,
+            "tp": close * 1.06,
+            "sl": close * 0.97,
             "grade": g,
             "star": s,
             "note": "Momentum awal, cocok 2–5 hari"
@@ -86,16 +103,19 @@ def analyze(kode):
 
     # ===== SCALPING =====
     p = 0
-    if avg_value >= 50_000_000_000: p += 1
-    if last["Volume"] > last["vol_ma20"]: p += 1
-    if last["Close"] > last["ema20"]: p += 1
+    if avg_value >= 50_000_000_000:
+        p += 1
+    if volume > vol_ma20:
+        p += 1
+    if close > ema20:
+        p += 1
 
     if p >= 2:
         g, s = confidence(p)
         hasil["SCALPING"] = {
-            "entry": float(last["Close"]),
-            "tp": float(last["Close"] * 1.01),
-            "sl": float(last["Close"] * 0.995),
+            "entry": close,
+            "tp": close * 1.01,
+            "sl": close * 0.995,
             "grade": g,
             "star": s,
             "note": "Likuid tinggi, cocok intraday"
@@ -108,9 +128,7 @@ def analyze(kode):
 
 # ================= TELEGRAM HANDLER =================
 def handle(update, context):
-    text = update.message.text.strip().upper()
-    parts = text.split()
-
+    parts = update.message.text.strip().upper().split()
     kode = parts[0]
     harga_beli = float(parts[1]) if len(parts) == 2 else None
 
@@ -123,8 +141,7 @@ def handle(update, context):
     prioritas = ["BAGGER", "SWING", "SCALPING"]
     utama = default if default in hasil else next(m for m in prioritas if m in hasil)
 
-    msg = f"📊 *{kode}*\n\n"
-    msg += "✅ *MODE VALID:*\n"
+    msg = f"📊 *{kode}*\n\n✅ *MODE VALID:*\n"
     for m in hasil:
         icon = "🔥" if m == "BAGGER" else "🟡" if m == "SWING" else "🔵"
         msg += f"{icon} {m}\n"

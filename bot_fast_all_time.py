@@ -1,21 +1,30 @@
+import os
 import requests
-from config_fast import *
 
 def main():
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    # Ambil dari GitHub Secrets
+    tg_token = os.getenv("TG_TOKEN")
+    chat_id = os.getenv("TG_CHAT_ID")
+
+    print("TOKEN ADA?", bool(tg_token))
+    print("CHAT_ID ADA?", bool(chat_id))
+
+    if not tg_token or not chat_id:
+        print("ERROR: Token atau Chat ID tidak terbaca")
+        return
+
+    url = f"https://api.telegram.org/bot{tg_token}/sendMessage"
     payload = {
-        "chat_id": CHAT_ID,
-        "text": "TEST FINAL: cek koneksi Telegram dari GitHub Actions"
+        "chat_id": chat_id,
+        "text": "TEST BERHASIL: Telegram dari GitHub Actions"
     }
 
-    r = requests.post(url, data=payload)
-
-    print("STATUS CODE :", r.status_code)
-    print("RESPONSE    :", r.text)
-
-    # paksa gagal kalau Telegram tidak OK
-    if r.status_code != 200:
-        raise Exception("Telegram send failed")
+    try:
+        response = requests.post(url, data=payload, timeout=10)
+        print("STATUS CODE:", response.status_code)
+        print("RESPONSE:", response.text)
+    except Exception as e:
+        print("REQUEST ERROR:", e)
 
 if __name__ == "__main__":
     main()

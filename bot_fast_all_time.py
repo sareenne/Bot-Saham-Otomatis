@@ -22,8 +22,8 @@ def send_telegram(text):
         print("Telegram error:", e)
 
 def main():
-    # TEST MESSAGE – PASTI DIKIRIM
-    send_telegram("✅ FAST ALL TIME BOT BERHASIL DIJALANKAN (SAFE MODE)")
+    # TEST MESSAGE – PASTI TERKIRIM
+    send_telegram("FAST ALL TIME BOT: START")
 
     for kode in SAHAM_LIST:
         try:
@@ -44,4 +44,7 @@ def main():
         except Exception as e:
             print("ERROR DATA", kode, e)
 
-    send_telegram("ℹ️ FAST ALL TIME SELESAI SC_
+    send_telegram("FAST ALL TIME BOT: SELESAI SCAN")
+
+if __name__ == "__main__":
+    main()

@@ -2,24 +2,25 @@ name: FAST ALL TIME BOT
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 2 * * 1-5'   # 09.00 WIB
 
 jobs:
   run-fast:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install requests
 
       - name: Run FAST ALL TIME
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python bot_fast_all_time.py

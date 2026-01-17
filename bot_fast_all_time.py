@@ -40,4 +40,37 @@ def fast_all_time_signal(df):
     return signal
 
 def main():
-    for kode
+    for kode in SAHAM_LIST:
+        try:
+            df = yf.download(
+                kode,
+                period=PERIOD,
+                interval=TIMEFRAME,
+                progress=False
+            )
+
+            if fast_all_time_signal(df):
+                harga = round(df['Close'].iloc[-1], 2)
+                vol_ratio = round(
+                    df['Volume'].iloc[-1] /
+                    df['Volume'].rolling(20).mean().iloc[-1], 2
+                )
+
+                msg = (
+                    "🚀 FAST ALL TIME ALERT\n"
+                    f"Kode : {kode.replace('.JK','')}\n"
+                    f"Harga: {harga}\n"
+                    f"Volume Spike: {vol_ratio}x\n"
+                    "Alasan:\n"
+                    "- Break High Pendek\n"
+                    "- Volume Meledak\n"
+                    "- MA 5 > MA 20\n"
+                    "- Candle Sehat"
+                )
+                send_telegram(msg)
+
+        except Exception as e:
+            print(f"Error {kode}: {e}")
+
+if __name__ == "__main__":
+    main()

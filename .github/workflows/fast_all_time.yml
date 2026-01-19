@@ -1,6 +1,9 @@
 name: FAST ALL TIME BOT
 
 on:
+  schedule:
+    # 10:30 WIB (03:30 UTC) - Senin s.d Jumat
+    - cron: '30 3 * * 1-5'
   workflow_dispatch:
 
 jobs:
